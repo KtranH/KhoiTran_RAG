@@ -229,10 +229,6 @@ Kiểm tra:
 - Mô hình được chọn có hỗ trợ chat completions API
 - Định dạng prompt phù hợp với mô hình
 
-## Giấy phép
-
-[MIT](LICENSE)
-
 ## Liên hệ
 
-Nếu bạn có bất kỳ câu hỏi hoặc đề xuất nào, vui lòng tạo issue hoặc liên hệ với tôi qua [email](mailto:your-email@example.com). 
+Nếu bạn có bất kỳ câu hỏi hoặc đề xuất nào, vui lòng tạo issue hoặc liên hệ với tôi qua [email](mailto:hoangkhoi230@gmail.com). 
