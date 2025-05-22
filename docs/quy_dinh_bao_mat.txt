@@ -1,0 +1,30 @@
+# QUY ĐỊNH BẢO MẬT THÔNG TIN
+
+## Phân loại thông tin
+- Thông tin công khai: Thông tin có thể chia sẻ rộng rãi, không hạn chế.
+- Thông tin nội bộ: Chỉ sử dụng trong nội bộ công ty, không chia sẻ ra bên ngoài.
+- Thông tin bảo mật: Chỉ những người được phép mới có quyền truy cập.
+- Thông tin tối mật: Thông tin cực kỳ nhạy cảm, chỉ một số ít người được phép truy cập.
+
+## Quy định chung
+- Mọi nhân viên phải ký cam kết bảo mật thông tin khi bắt đầu làm việc.
+- Không chia sẻ thông tin công ty với bất kỳ ai không có quyền truy cập.
+- Không thảo luận về thông tin bảo mật ở nơi công cộng.
+- Báo cáo ngay lập tức nếu phát hiện vi phạm bảo mật.
+
+## Bảo mật máy tính và thiết bị
+- Sử dụng mật khẩu mạnh, thay đổi mật khẩu định kỳ 3 tháng/lần.
+- Khóa máy tính khi rời khỏi vị trí làm việc.
+- Không cài đặt phần mềm không được phép trên thiết bị công ty.
+- Không sử dụng USB không rõ nguồn gốc.
+
+## Xử lý tài liệu
+- Tài liệu bảo mật phải được đánh dấu rõ ràng.
+- Không để tài liệu bảo mật trên bàn làm việc khi không sử dụng.
+- Hủy tài liệu bảo mật bằng máy hủy tài liệu khi không còn nhu cầu sử dụng.
+- Lưu trữ tài liệu bảo mật trong tủ có khóa.
+
+## Vi phạm quy định
+- Vi phạm nhẹ: Nhắc nhở và đào tạo lại.
+- Vi phạm nghiêm trọng: Kỷ luật, có thể dẫn đến chấm dứt hợp đồng.
+- Vi phạm cố ý gây thiệt hại: Chấm dứt hợp đồng và có thể bị truy cứu trách nhiệm pháp lý.
