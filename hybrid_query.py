@@ -314,6 +314,61 @@ Nếu có sự mâu thuẫn giữa các nguồn, hãy nêu rõ điều này và 
             logger.error(f"Lỗi khi tổng hợp câu trả lời hybrid: {e}")
             return "Lỗi khi tổng hợp câu trả lời từ các nguồn khác nhau."
     
+    def evaluate_model_knowledge(self, question: str) -> Tuple[bool, Optional[str]]:
+        """
+        Đánh giá xem model có đủ kiến thức để trả lời câu hỏi không
+        
+        Args:
+            question: Câu hỏi của người dùng
+            
+        Returns:
+            Tuple[bool, Optional[str]]: (có_thể_trả_lời, câu_trả_lời)
+        """
+        logger.info(f"Đánh giá kiến thức model cho câu hỏi: '{question}'")
+        
+        url = f"{self.lm_studio_url}/v1/chat/completions"
+        
+        system_message = """Bạn là trợ lý AI thông minh. 
+Trước khi tôi truy vấn database hoặc tìm kiếm trong tài liệu, hãy đánh giá xem bạn có kiến thức để trả lời câu hỏi này không.
+Nếu bạn biết câu trả lời, hãy trả lời ngắn gọn và chính xác.
+Nếu bạn không chắc chắn hoặc không biết, hãy chỉ trả lời: "TÔI CẦN TRA CỨU THÊM"
+Đừng đoán mò. Nếu không chắc chắn 100%, hãy nói bạn cần tra cứu thêm."""
+        
+        payload = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": question}
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.3,
+            "stream": False
+        }
+        
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+            answer = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+            
+            # Kiểm tra xem model có cần tra cứu thêm không
+            needs_lookup = "TÔI CẦN TRA CỨU THÊM" in answer.upper() or any(phrase in answer.lower() for phrase in [
+                "tôi cần tra cứu", "không có thông tin", "không biết", "không chắc chắn",
+                "không thể trả lời", "không đủ thông tin", "cần tìm hiểu thêm"
+            ])
+            
+            if not needs_lookup:
+                return True, answer
+            else:
+                return False, None
+        except Exception as e:
+            logger.error(f"Lỗi khi đánh giá kiến thức model: {e}")
+            return False, None
+    
     def query(self, question: str, top_k: int = 3) -> Dict[str, Any]:
         """
         Xử lý toàn bộ quá trình truy vấn hybrid
@@ -325,6 +380,21 @@ Nếu có sự mâu thuẫn giữa các nguồn, hãy nêu rõ điều này và 
         Returns:
             Dict: Kết quả hoàn chỉnh
         """
+        # Kiểm tra xem model có thể trả lời câu hỏi không
+        model_can_answer, model_answer = self.evaluate_model_knowledge(question)
+        
+        if model_can_answer:
+            logger.info("Model có thể trả lời câu hỏi từ kiến thức sẵn có")
+            return {
+                "answer": model_answer,
+                "sources": ["Kiến thức của model"],
+                "query_type": {
+                    "database": False,
+                    "document": False,
+                    "model_knowledge": True
+                }
+            }
+        
         # Xác định loại truy vấn
         is_db_related, needs_document = self.determine_query_type(question)
         
@@ -345,7 +415,8 @@ Nếu có sự mâu thuẫn giữa các nguồn, hãy nêu rõ điều này và 
         # Thêm thông tin về loại truy vấn
         result["query_type"] = {
             "database": is_db_related,
-            "document": needs_document
+            "document": needs_document,
+            "model_knowledge": False
         }
         
         return result 

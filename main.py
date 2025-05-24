@@ -226,17 +226,25 @@ def query_hybrid(query: str,
     # Hiển thị thông tin về loại truy vấn
     print("-"*50)
     print("Loại truy vấn:")
-    if result["query_type"]["database"]:
-        print("  - Database: Có")
-        if result.get("sql_query"):
-            print(f"    SQL: {result['sql_query']}")
-    else:
-        print("  - Database: Không")
     
-    if result["query_type"]["document"]:
-        print("  - Tài liệu: Có")
-    else:
+    # Kiểm tra nếu câu trả lời đến từ kiến thức có sẵn của model
+    if result["query_type"].get("model_knowledge", False):
+        print("  - Kiến thức của model: Có")
+        print("  - Database: Không")
         print("  - Tài liệu: Không")
+    else:
+        # Hiển thị theo cách cũ nếu không phải kiến thức của model
+        if result["query_type"]["database"]:
+            print("  - Database: Có")
+            if result.get("sql_query"):
+                print(f"    SQL: {result['sql_query']}")
+        else:
+            print("  - Database: Không")
+        
+        if result["query_type"]["document"]:
+            print("  - Tài liệu: Có")
+        else:
+            print("  - Tài liệu: Không")
     
     print("="*50 + "\n")
     
@@ -271,7 +279,8 @@ def interactive_mode(mode: str = "hybrid",
     mode_titles = {
         "hybrid": "HYBRID (DATABASE + RAG)",
         "document": "RAG (DOCUMENT ONLY)",
-        "database": "DATABASE ONLY"
+        "database": "DATABASE ONLY",
+        "auto": "AUTO (KNOWLEDGE FIRST)"
     }
     
     print("\n" + "="*50)
@@ -284,6 +293,18 @@ def interactive_mode(mode: str = "hybrid",
     
     current_mode = mode
     
+    # Tạo đối tượng HybridQuery một lần để sử dụng trong vòng lặp
+    hybrid_query = HybridQuery(
+        lm_studio_url=lm_studio_url,
+        model_name=model_name,
+        persist_directory=persist_directory,
+        mysql_host=mysql_host,
+        mysql_user=mysql_user,
+        mysql_password=mysql_password,
+        mysql_port=mysql_port,
+        mysql_database=mysql_database
+    )
+    
     while True:
         query = input("Câu hỏi của bạn: ")
         if query.lower() in ['exit', 'quit']:
@@ -292,11 +313,42 @@ def interactive_mode(mode: str = "hybrid",
         
         # Xử lý lệnh chuyển đổi chế độ
         if query.lower() == 'mode':
-            modes = ['hybrid', 'document', 'database']
+            modes = ['auto', 'hybrid', 'document', 'database']
             current_index = modes.index(current_mode) if current_mode in modes else 0
             current_mode = modes[(current_index + 1) % len(modes)]
             print(f"\nĐã chuyển sang chế độ: {mode_titles.get(current_mode)}")
             continue
+        
+        # Nếu ở chế độ auto, kiểm tra xem model có thể trả lời trực tiếp không
+        if current_mode == 'auto':
+            model_can_answer, model_answer = hybrid_query.evaluate_model_knowledge(query)
+            
+            if model_can_answer:
+                print("\n" + "="*50)
+                print(f"Câu hỏi: {query}")
+                print("="*50)
+                print(f"Trả lời: {model_answer}")
+                print("="*50)
+                print("Nguồn thông tin: Kiến thức của model")
+                print("="*50 + "\n")
+                continue
+            else:
+                # Nếu model không biết, chuyển sang chế độ hybrid
+                print("Model không có kiến thức để trả lời, đang chuyển sang tìm kiếm thông tin...")
+                # Sử dụng hybrid để xử lý
+                query_hybrid(
+                    query=query,
+                    persist_directory=persist_directory,
+                    mysql_host=mysql_host,
+                    mysql_user=mysql_user,
+                    mysql_password=mysql_password,
+                    mysql_port=mysql_port,
+                    mysql_database=mysql_database,
+                    lm_studio_url=lm_studio_url,
+                    model_name=model_name,
+                    top_k=top_k
+                )
+                continue
         
         # Thực hiện truy vấn theo chế độ hiện tại
         if current_mode == 'document':
@@ -377,9 +429,22 @@ def main():
     hybrid_parser.add_argument('--model_name', type=str, default=None, help='Tên model LLM')
     hybrid_parser.add_argument('--top_k', type=int, default=3, help='Số lượng kết quả tìm kiếm cho tài liệu')
     
+    # Lệnh auto: Truy vấn tự động (sử dụng kiến thức model trước, sau đó hybrid nếu cần)
+    auto_parser = subparsers.add_parser('auto', help='Truy vấn tự động (model knowledge first)')
+    auto_parser.add_argument('--query', type=str, required=True, help='Câu hỏi của người dùng')
+    auto_parser.add_argument('--persist_directory', type=str, default='./chroma_db', help='Thư mục lưu trữ vector database')
+    auto_parser.add_argument('--mysql_host', type=str, default=None, help='Host của MySQL server')
+    auto_parser.add_argument('--mysql_user', type=str, default=None, help='Username MySQL')
+    auto_parser.add_argument('--mysql_password', type=str, default=None, help='Password MySQL')
+    auto_parser.add_argument('--mysql_port', type=int, default=None, help='Port của MySQL server')
+    auto_parser.add_argument('--mysql_database', type=str, default=None, help='Tên database MySQL')
+    auto_parser.add_argument('--lm_studio_url', type=str, default=None, help='URL của LM Studio API')
+    auto_parser.add_argument('--model_name', type=str, default=None, help='Tên model LLM')
+    auto_parser.add_argument('--top_k', type=int, default=3, help='Số lượng kết quả tìm kiếm cho tài liệu')
+    
     # Lệnh interactive: Chế độ tương tác
     interactive_parser = subparsers.add_parser('interactive', help='Chế độ tương tác')
-    interactive_parser.add_argument('--mode', type=str, choices=['hybrid', 'document', 'database'], default='hybrid', help='Chế độ truy vấn ban đầu')
+    interactive_parser.add_argument('--mode', type=str, choices=['auto', 'hybrid', 'document', 'database'], default='auto', help='Chế độ truy vấn ban đầu')
     interactive_parser.add_argument('--persist_directory', type=str, default='./chroma_db', help='Thư mục lưu trữ vector database')
     interactive_parser.add_argument('--mysql_host', type=str, default=None, help='Host của MySQL server')
     interactive_parser.add_argument('--mysql_user', type=str, default=None, help='Username MySQL')
@@ -436,6 +501,45 @@ def main():
             model_name=model_name,
             top_k=args.top_k
         )
+    elif args.command == 'auto':
+        # Tạo đối tượng HybridQuery
+        hybrid_query = HybridQuery(
+            lm_studio_url=lm_studio_url,
+            model_name=model_name,
+            persist_directory=args.persist_directory,
+            mysql_host=args.mysql_host,
+            mysql_user=args.mysql_user,
+            mysql_password=args.mysql_password,
+            mysql_port=args.mysql_port,
+            mysql_database=args.mysql_database
+        )
+        
+        # Kiểm tra xem model có thể trả lời trực tiếp không
+        model_can_answer, model_answer = hybrid_query.evaluate_model_knowledge(args.query)
+        
+        if model_can_answer:
+            # In kết quả từ kiến thức của model
+            print("\n" + "="*50)
+            print(f"Câu hỏi: {args.query}")
+            print("="*50)
+            print(f"Trả lời: {model_answer}")
+            print("="*50)
+            print("Nguồn thông tin: Kiến thức của model")
+            print("="*50 + "\n")
+        else:
+            # Nếu model không biết, sử dụng hybrid
+            query_hybrid(
+                query=args.query,
+                persist_directory=args.persist_directory,
+                mysql_host=args.mysql_host,
+                mysql_user=args.mysql_user,
+                mysql_password=args.mysql_password,
+                mysql_port=args.mysql_port,
+                mysql_database=args.mysql_database,
+                lm_studio_url=lm_studio_url,
+                model_name=model_name,
+                top_k=args.top_k
+            )
     elif args.command == 'interactive':
         interactive_mode(
             mode=args.mode,

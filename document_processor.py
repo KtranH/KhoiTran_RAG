@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable, Optional
 import requests
 import json
 from langchain_community.document_loaders import TextLoader, DirectoryLoader
@@ -195,13 +195,33 @@ class DocumentProcessor:
         logger.info(f"Đã tải vector database thành công")
         return vectordb
 
-    def process_all(self) -> Chroma:
+    def process_all(self, progress_callback: Optional[Callable[[float], None]] = None) -> Chroma:
         """
         Xử lý toàn bộ quá trình: tải tài liệu, chia nhỏ, tạo vector database
         
+        Args:
+            progress_callback: Hàm callback để cập nhật tiến trình, nhận giá trị từ 0.0 đến 1.0
+            
         Returns:
             Chroma: Vector database đã tạo
         """
+        # Gọi callback với tiến trình 0%
+        if progress_callback:
+            progress_callback(0.0)
+            
+        # Tải tài liệu (30% công việc)
         documents = self.load_documents()
+        if progress_callback:
+            progress_callback(0.3)
+            
+        # Chia nhỏ tài liệu (60% công việc)
         chunks = self.split_documents(documents)
-        return self.create_vector_db(chunks) 
+        if progress_callback:
+            progress_callback(0.6)
+            
+        # Tạo vector database (100% công việc)
+        vectordb = self.create_vector_db(chunks)
+        if progress_callback:
+            progress_callback(1.0)
+            
+        return vectordb 
