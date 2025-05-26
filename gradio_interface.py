@@ -8,6 +8,7 @@ from document_processor import DocumentProcessor
 from document_query import DocumentQuery
 from database_query import DatabaseQuery
 from hybrid_query import HybridQuery
+from database_query_2 import SQLServerQuery
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +26,12 @@ MYSQL_USER = os.getenv("MYSQL_USER", "root")
 MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
 MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
 MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "kt_ai")
+SQLSERVER_SERVER = os.getenv("SQLSERVER_SERVER", "localhost")
+SQLSERVER_USER = os.getenv("SQLSERVER_USER", "sa")
+SQLSERVER_PASSWORD = os.getenv("SQLSERVER_PASSWORD", "123")
+SQLSERVER_PORT = int(os.getenv("SQLSERVER_PORT", "1433"))
+SQLSERVER_DATABASE = os.getenv("SQLSERVER_DATABASE", "WEB_APP_QLKS")
+SQLSERVER_DRIVER = os.getenv("SQLSERVER_DRIVER", "ODBC Driver 17 for SQL Server")
 TOP_K = int(os.getenv("TOP_K", "3"))
 
 # Màu sắc và CSS tùy chỉnh
@@ -93,6 +100,18 @@ def get_database_query():
         model_name=MODEL_NAME
     )
 
+def get_sqlserver_query():
+    return SQLServerQuery(
+        server=SQLSERVER_SERVER,
+        user=SQLSERVER_USER,
+        password=SQLSERVER_PASSWORD,
+        port=SQLSERVER_PORT,
+        database=SQLSERVER_DATABASE,
+        driver=SQLSERVER_DRIVER,
+        lm_studio_url=LM_STUDIO_URL,
+        model_name=MODEL_NAME
+    )
+
 def get_hybrid_query():
     return HybridQuery(
         lm_studio_url=LM_STUDIO_URL,
@@ -132,6 +151,17 @@ def check_mysql_connection():
         return True, "Đã kết nối thành công đến MySQL"
     except Exception as e:
         return False, f"Lỗi kết nối đến MySQL: {str(e)}"
+
+# Kiểm tra kết nối đến SQL Server
+def check_sqlserver_connection():
+    try:
+        import pyodbc
+        conn_str = f"DRIVER={{{SQLSERVER_DRIVER}}};SERVER={SQLSERVER_SERVER},{SQLSERVER_PORT};DATABASE={SQLSERVER_DATABASE};UID={SQLSERVER_USER};PWD={SQLSERVER_PASSWORD}"
+        conn = pyodbc.connect(conn_str, timeout=5)
+        conn.close()
+        return True, "Đã kết nối thành công đến SQL Server"
+    except Exception as e:
+        return False, f"Lỗi kết nối đến SQL Server: {str(e)}"
 
 # Đánh giá kiến thức của model
 def evaluate_model_knowledge(question):
@@ -233,22 +263,42 @@ def process_query(message, history, mode, top_k_value, progress=gr.Progress()):
             response += "</div>"
                 
         elif mode == "database":
-            yield "", history + [[message, "⏳ Đang truy vấn cơ sở dữ liệu..."]]
+            yield "", history + [[message, "⏳ Đang truy vấn MySQL..."]]
             db_query = get_database_query()
             result = db_query.query(message)
             
             if result["success"]:
                 response = f"<div class='query-info'>"
-                response += f"<b>🔍 Truy vấn SQL:</b> <code>{result['sql_query']}</code>"
+                response += f"<b>🔍 Truy vấn MySQL:</b> <code>{result['sql_query']}</code>"
                 response += "</div>"
                 
-                if isinstance(result["results"], list):
+                if isinstance(result.get("raw_results", []), list):
                     if result.get("formatted_results"):
                         response += f"<pre>{result['formatted_results']}</pre>"
                     else:
-                        response += f"<b>Số lượng kết quả:</b> {len(result['results'])}"
+                        response += f"<b>Số lượng kết quả:</b> {len(result['raw_results'])}"
                 else:
-                    response += f"<b>Kết quả:</b> {result['results']}"
+                    response += f"<b>Kết quả:</b> {result.get('formatted_results', '')}"
+            else:
+                response = f"<span class='status-error'>⚠️ Lỗi: {result['message']}</span>"
+        
+        elif mode == "sqlserver":
+            yield "", history + [[message, "⏳ Đang truy vấn SQL Server..."]]
+            sqlserver_query = get_sqlserver_query()
+            result = sqlserver_query.query(message)
+            
+            if result["success"]:
+                response = f"<div class='query-info'>"
+                response += f"<b>🔍 Truy vấn SQL Server:</b> <code>{result['sql_query']}</code>"
+                response += "</div>"
+                
+                if isinstance(result.get("raw_results", []), list):
+                    if result.get("formatted_results"):
+                        response += f"<pre>{result['formatted_results']}</pre>"
+                    else:
+                        response += f"<b>Số lượng kết quả:</b> {len(result['raw_results'])}"
+                else:
+                    response += f"<b>Kết quả:</b> {result.get('formatted_results', '')}"
             else:
                 response = f"<span class='status-error'>⚠️ Lỗi: {result['message']}</span>"
                 
@@ -327,12 +377,15 @@ def create_gradio_interface():
     # Kiểm tra kết nối
     lm_connected, lm_status = check_connection()
     db_connected, db_status = check_mysql_connection()
+    sqlserver_connected, sqlserver_status = check_sqlserver_connection()
     
     # Định nghĩa các chuỗi HTML cho trạng thái
     lm_connected_html = '<span class="status-connected">✅ Đã kết nối</span>'
     lm_error_html = '<span class="status-error">❌ Lỗi kết nối</span>'
     db_connected_html = '<span class="status-connected">✅ Đã kết nối</span>'
     db_error_html = '<span class="status-error">❌ Lỗi kết nối</span>'
+    sqlserver_connected_html = '<span class="status-connected">✅ Đã kết nối</span>'
+    sqlserver_error_html = '<span class="status-error">❌ Lỗi kết nối</span>'
     
     # Định nghĩa chủ đề tối (Dark theme)
     theme = gr.themes.Soft(
@@ -390,7 +443,7 @@ def create_gradio_interface():
                     with gr.Column(scale=1):
                         gr.Markdown("### Chế độ truy vấn")
                         mode_selector = gr.Radio(
-                            ["auto", "hybrid", "document", "database"],
+                            ["auto", "hybrid", "document", "database", "sqlserver"],
                             label="Chọn chế độ truy vấn phù hợp với câu hỏi của bạn",
                             value="auto",
                             container=True,
@@ -412,10 +465,16 @@ def create_gradio_interface():
                             db_status_component = gr.Markdown(
                                 f"**MySQL Database**: {db_connected_html if db_connected else db_error_html}"
                             )
+                            sqlserver_status_component = gr.Markdown(
+                                f"**SQL Server Database**: {sqlserver_connected_html if sqlserver_connected else sqlserver_error_html}"
+                            )
                             
-                            if not lm_connected or not db_connected:
+                            if not lm_connected or not db_connected or not sqlserver_connected:
                                 gr.Markdown(
-                                    f"**Chi tiết lỗi**:\n- LM Studio: {lm_status}\n- MySQL: {db_status}"
+                                    f"""**Chi tiết lỗi**:
+- LM Studio: {lm_status}
+- MySQL: {db_status}
+- SQL Server: {sqlserver_status}"""
                                 )
                         
                         with gr.Accordion("🔧 Thông tin hệ thống", open=False):
@@ -424,13 +483,15 @@ def create_gradio_interface():
                                 - **Model LLM**: {MODEL_NAME}
                                 - **API URL**: {LM_STUDIO_URL}
                                 - **Vector DB**: {PERSIST_DIRECTORY}
-                                - **Database**: {MYSQL_DATABASE}@{MYSQL_HOST}
+                                - **MySQL**: {MYSQL_DATABASE}@{MYSQL_HOST}
+                                - **SQL Server**: {SQLSERVER_DATABASE}@{SQLSERVER_SERVER}
                                 
                                 ### Chế độ truy vấn
                                 - **Auto**: Tự động quyết định sử dụng kiến thức được huấn luyện sẵn hoặc truy vấn tài nguyên
                                 - **Hybrid**: Kết hợp cả RAG và truy vấn cơ sở dữ liệu
                                 - **Document**: Chỉ sử dụng RAG
-                                - **Database**: Chỉ truy vấn cơ sở dữ liệu
+                                - **Database**: Chỉ truy vấn MySQL
+                                - **SQLServer**: Chỉ truy vấn SQL Server
                                 """
                             )
                 
@@ -452,6 +513,7 @@ def create_gradio_interface():
                         with gr.Row():
                             check_lm_btn = gr.Button("🔄 Kiểm tra LM Studio API", variant="secondary")
                             check_db_btn = gr.Button("🔄 Kiểm tra MySQL", variant="secondary")
+                            check_sqlserver_btn = gr.Button("🔄 Kiểm tra SQL Server", variant="secondary")
                         
                         connection_status = gr.Markdown()
                 
@@ -465,7 +527,7 @@ def create_gradio_interface():
                            - Nhấn nút "Tạo Vector Database" để tạo cơ sở dữ liệu vector từ tài liệu
 
                         2. **Sử dụng chatbot**:
-                           - Chọn chế độ truy vấn phù hợp (auto, hybrid, document, database)
+                           - Chọn chế độ truy vấn phù hợp (auto, hybrid, document, database, sqlserver)
                            - Nhập câu hỏi và nhấn "Gửi" hoặc Enter
                            - Kết quả sẽ được hiển thị trong cửa sổ chat
 
@@ -473,7 +535,8 @@ def create_gradio_interface():
                            - **Auto**: Tự động sử dụng kiến thức có sẵn hoặc truy vấn tài nguyên khi cần
                            - **Hybrid**: Kết hợp cả RAG và truy vấn cơ sở dữ liệu
                            - **Document**: Chỉ sử dụng RAG để trả lời từ tài liệu
-                           - **Database**: Chỉ truy vấn cơ sở dữ liệu
+                           - **Database**: Chỉ truy vấn MySQL
+                           - **SQLServer**: Chỉ truy vấn SQL Server
 
                         4. **Mẹo tối ưu hiệu suất**:
                            - Đối với câu hỏi đơn giản, hệ thống sẽ trả lời ngay lập tức
@@ -519,6 +582,12 @@ def create_gradio_interface():
         
         check_db_btn.click(
             lambda: check_mysql_connection()[1],
+            inputs=None,
+            outputs=[connection_status],
+        )
+        
+        check_sqlserver_btn.click(
+            lambda: check_sqlserver_connection()[1],
             inputs=None,
             outputs=[connection_status],
         )
