@@ -210,7 +210,9 @@ HƯỚNG DẪN QUAN TRỌNG:
 4. Đảm bảo cú pháp SQL chuẩn và tương thích với SQL Server.
 5. Sử dụng tên bảng và cột chính xác như đã cung cấp.
 6. Truy vấn phải kết thúc bằng dấu chấm phẩy (;).
-7. Nếu không có đủ thông tin để viết một truy vấn chính xác, hãy trả về truy vấn đơn giản nhất có thể dựa trên thông tin sẵn có."""
+7. Nếu không có đủ thông tin để viết một truy vấn chính xác, hãy trả về truy vấn đơn giản nhất có thể dựa trên thông tin sẵn có.
+8. SQL Server KHÔNG hỗ trợ cú pháp LIMIT, thay vào đó hãy sử dụng TOP.
+9. Ví dụ: "SELECT TOP 10 * FROM table" thay vì "SELECT * FROM table LIMIT 10"."""
         
         payload = {
             "model": self.model_name,
@@ -259,6 +261,9 @@ HƯỚNG DẪN QUAN TRỌNG:
             if ';' in sql_query:
                 sql_query = sql_query.split(';')[0] + ';'
             
+            # Chuyển đổi cú pháp MySQL sang SQL Server
+            sql_query = self.convert_mysql_to_sqlserver_syntax(sql_query)
+            
             sql_query = sql_query.strip()
             logger.info(f"Đã tạo truy vấn SQL: {sql_query}")
             
@@ -266,6 +271,44 @@ HƯỚNG DẪN QUAN TRỌNG:
         except Exception as err:
             logger.error(f"Lỗi khi gọi LLM API: {err}")
             return ""
+    
+    def convert_mysql_to_sqlserver_syntax(self, query: str) -> str:
+        """
+        Chuyển đổi cú pháp MySQL sang cú pháp SQL Server
+        
+        Args:
+            query: Truy vấn SQL với cú pháp có thể là MySQL
+            
+        Returns:
+            str: Truy vấn SQL với cú pháp SQL Server
+        """
+        # Chuẩn hóa khoảng trắng để dễ xử lý regex
+        query = re.sub(r'\s+', ' ', query).strip()
+        
+        # Chuyển đổi LIMIT x thành TOP x
+        limit_pattern = re.compile(r'SELECT (.*?) FROM (.*?) ORDER BY (.*?) LIMIT (\d+);', re.IGNORECASE)
+        if limit_pattern.search(query):
+            query = limit_pattern.sub(r'SELECT TOP \4 \1 FROM \2 ORDER BY \3;', query)
+        
+        # Chuyển đổi LIMIT x, y thành OFFSET-FETCH
+        limit_offset_pattern = re.compile(r'SELECT (.*?) FROM (.*?) ORDER BY (.*?) LIMIT (\d+),\s*(\d+);', re.IGNORECASE)
+        if limit_offset_pattern.search(query):
+            query = limit_offset_pattern.sub(r'SELECT \1 FROM \2 ORDER BY \3 OFFSET \4 ROWS FETCH NEXT \5 ROWS ONLY;', query)
+            
+        # Trường hợp không có ORDER BY nhưng có LIMIT
+        no_order_limit_pattern = re.compile(r'SELECT (.*?) FROM (.*?) LIMIT (\d+);', re.IGNORECASE)
+        if no_order_limit_pattern.search(query):
+            query = no_order_limit_pattern.sub(r'SELECT TOP \3 \1 FROM \2;', query)
+        
+        # Trường hợp không có ORDER BY nhưng có LIMIT với offset
+        no_order_limit_offset_pattern = re.compile(r'SELECT (.*?) FROM (.*?) LIMIT (\d+),\s*(\d+);', re.IGNORECASE)
+        if no_order_limit_offset_pattern.search(query):
+            query = no_order_limit_offset_pattern.sub(r'SELECT \1 FROM \2 ORDER BY (SELECT NULL) OFFSET \3 ROWS FETCH NEXT \4 ROWS ONLY;', query)
+        
+        # Các chuyển đổi khác nếu cần
+        # ...
+        
+        return query
     
     def is_valid_sql(self, sql_query: str) -> bool:
         """
